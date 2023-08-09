@@ -9,8 +9,8 @@
 </head>
 <body>
 <h1>Current Time</h1>
-<p>Current time in the selected timezone: <span th:text="${currentTime}"></span></p>
-<p>Last selected timezone: <span th:text="${lastTimezone}"></span></p>
+<p>Current time in the selected timezone: <span text="${currentTime}"></span></p>
+<p>Last selected timezone: <span text="${lastTimezone}"></span></p>
 <form action="/time" method="get">
     <label for="timezone">Timezone:</label>
     <input type="text" id="timezone" name="timezone">
