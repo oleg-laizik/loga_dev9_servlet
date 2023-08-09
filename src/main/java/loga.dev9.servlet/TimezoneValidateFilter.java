@@ -1,15 +1,15 @@
 package loga.dev9.servlet;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebFilter;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.Cookie;
 import java.io.IOException;
+import java.time.ZoneId;
 import java.util.Set;
-import java.util.TimeZone;
-import jakarta.servlet.ServletException;
 
 @WebFilter(value = "/time")
 public class TimezoneValidateFilter extends HttpFilter {
@@ -34,8 +34,6 @@ public class TimezoneValidateFilter extends HttpFilter {
     }
 
     private boolean isValidTimezone(String timezone) {
-        String id = timezone.replace("UTC", "Etc/GMT");
-        return Set.of(TimeZone.getAvailableIDs()).contains(id);
+        return ZoneId.getAvailableZoneIds().contains(timezone);
     }
-
 }
