@@ -7,69 +7,105 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+import org.thymeleaf.templateresolver.FileTemplateResolver;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
+import java.util.Objects;
 
-@WebServlet("/time")
+@WebServlet(value = "/time")
 public class TimeServlet extends HttpServlet {
 
-    private TemplateEngine templateEngine;
+    public static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss z";
+    public static final String TIMEZONE = "timezone";
+    public static final String LAST_TIMEZONE_COOKIE = "lastTimezone";
+
+    private transient TemplateEngine engine;
 
     @Override
     public void init() {
-        templateEngine = new TemplateEngine();
-        ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
-        templateResolver.setPrefix("templates/");
-        templateResolver.setSuffix(".html");
-        templateEngine.setTemplateResolver(templateResolver);
+        engine = new TemplateEngine();
+        configureTemplateEngine();
+    }
+
+    private void configureTemplateEngine() {
+        FileTemplateResolver resolver = new FileTemplateResolver();
+        resolver.setPrefix(Objects.requireNonNull(getClass()
+                        .getClassLoader()
+                        .getResource("templates"))
+                .getPath());
+        resolver.setSuffix(".html");
+        resolver.setTemplateMode("HTML5");
+        resolver.setOrder(engine.getTemplateResolvers().size());
+        resolver.setCacheable(false);
+        engine.addTemplateResolver(resolver);
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String currentTimezone = getCurrentTimezone(request, response);
+        renderTimezonePage(request, response, currentTimezone);
+    }
 
+    private String getCurrentTimezone(HttpServletRequest request, HttpServletResponse response) {
+        String requestedTimezone = request.getParameter(TIMEZONE);
+        String lastTimezone = getLastTimezoneFromCookies(request.getCookies());
+
+        String currentTimezone = "";
+        if (requestedTimezone != null && !requestedTimezone.isEmpty()) {
+            currentTimezone = parseDateToFormat(requestedTimezone);
+            response.addCookie(new Cookie(LAST_TIMEZONE_COOKIE, requestedTimezone));
+        } else if (!lastTimezone.isEmpty()) {
+            currentTimezone = parseDateToFormat(lastTimezone);
+        } else {
+            currentTimezone = parseDateToFormat("UTC");
+        }
+        return currentTimezone;
+    }
+
+    private String getLastTimezoneFromCookies(Cookie[] cookies) {
         String lastTimezone = "";
-        String timezoneParam = request.getParameter("timezone");
+        Cookie lastTimezoneCookie = findCookieByName(cookies, LAST_TIMEZONE_COOKIE);
 
-        Cookie[] cookies = request.getCookies();
+        if (lastTimezoneCookie != null) {
+            lastTimezone = parseDateToFormat(lastTimezoneCookie.getValue());
+        }
+        return lastTimezone;
+    }
+
+    private Cookie findCookieByName(Cookie[] cookies, String name) {
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("lastTimezone".equals(cookie.getName())) {
-                    lastTimezone = cookie.getValue();
-                    break;
+                if (name.equals(cookie.getName())) {
+                    return cookie;
                 }
             }
         }
-
-        ZoneId timezone = parseTimezone(timezoneParam, lastTimezone);
-
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
-        LocalDateTime currentTime;
-
-        if (timezone != null) {
-            currentTime = LocalDateTime.now(timezone);
-            response.addCookie(new Cookie("lastTimezone", timezone.getId()));
-        } else {
-            currentTime = LocalDateTime.now();
-        }
-
-        String formattedTime = currentTime.format(formatter);
-
-        Context context = new Context();
-        context.setVariable("currentTime", formattedTime);
-        templateEngine.process("test", context, response.getWriter());
-    }
-
-    private ZoneId parseTimezone(String timezone, String lastTimezone) {
-        if (timezone != null) {
-            return ZoneId.of(timezone);
-        } else if (lastTimezone != null && !lastTimezone.isEmpty()) {
-            return ZoneId.of(lastTimezone);
-        }
         return null;
     }
+
+    private void renderTimezonePage(HttpServletRequest request, HttpServletResponse response, String currentTimezone) throws IOException {
+        Context context = new Context(request.getLocale());
+        context.setVariable("currentTimezone", currentTimezone);
+
+        response.setContentType("text/html; charset=UTF-8");
+        String templateName = "test";
+
+        try {
+            engine.process(templateName, context, response.getWriter());
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal Server Error");
+        }
+    }
+
+    private String parseDateToFormat(String zoneId) {
+        Instant date = new Date().toInstant();
+        DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern(DATE_PATTERN)
+                .withZone(ZoneId.of(zoneId));
+        return dateFormat.format(date);
+    }
+
 }
