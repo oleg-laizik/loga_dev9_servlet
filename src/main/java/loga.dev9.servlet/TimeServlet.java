@@ -10,9 +10,12 @@ import org.thymeleaf.context.Context;
 import org.thymeleaf.templateresolver.FileTemplateResolver;
 
 import java.io.IOException;
-import java.time.*;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Map;
 import java.util.Objects;
 
 @WebServlet(value = "/time")
@@ -20,17 +23,12 @@ public class TimeServlet extends HttpServlet {
 
     public static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss z";
     public static final String TIMEZONE = "timezone";
-    public static final String LAST_TIMEZONE_COOKIE = "lastTimezone";
-
     private transient TemplateEngine engine;
 
     @Override
     public void init() {
         engine = new TemplateEngine();
-        configureTemplateEngine();
-    }
 
-    private void configureTemplateEngine() {
         FileTemplateResolver resolver = new FileTemplateResolver();
         resolver.setPrefix(Objects.requireNonNull(getClass()
                         .getClassLoader()
@@ -44,68 +42,53 @@ public class TimeServlet extends HttpServlet {
     }
 
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String currentTimezone = getCurrentTimezone(request, response);
-        renderTimezonePage(request, response, currentTimezone);
-    }
-
-    private String getCurrentTimezone(HttpServletRequest request, HttpServletResponse response) {
-        String requestedTimezone = request.getParameter(TIMEZONE);
-        String lastTimezone = getLastTimezoneFromCookies(request.getCookies());
-
-        String currentTimezone = "";
-        if (requestedTimezone != null && !requestedTimezone.isEmpty()) {
-            currentTimezone = parseDateToFormat(requestedTimezone);
-            response.addCookie(new Cookie(LAST_TIMEZONE_COOKIE, requestedTimezone));
-        } else if (!lastTimezone.isEmpty()) {
-            currentTimezone = parseDateToFormat(lastTimezone);
-        } else {
-            currentTimezone = parseDateToFormat("UTC");
-        }
-        return currentTimezone;
-    }
-
-    private String getLastTimezoneFromCookies(Cookie[] cookies) {
+    protected void doGet(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse)
+            throws IOException {
         String lastTimezone = "";
-        Cookie lastTimezoneCookie = findCookieByName(cookies, LAST_TIMEZONE_COOKIE);
+        String currentTimezone = "";
+        httpServletResponse.setContentType("text/html");
 
-        if (lastTimezoneCookie != null) {
-            lastTimezone = parseDateToFormat(lastTimezoneCookie.getValue());
+        String requestedTimezone = httpServletRequest.getParameter(TIMEZONE);
+        if (requestedTimezone == null || requestedTimezone.isEmpty()) {
+            Cookie[] cookies = httpServletRequest.getCookies();
+            if (cookies != null && cookies.length > 0) {
+                lastTimezone = getLastTimezoneFromCookies(lastTimezone, cookies);
+            } else {
+                currentTimezone = parseDateToFormat("UTC");
+            }
+        } else {
+            httpServletResponse.addCookie(new Cookie("lastTimezone", requestedTimezone));
+            currentTimezone = parseDateToFormat(requestedTimezone);
+        }
+
+        Context context = new Context(
+                httpServletRequest.getLocale(),
+                Map.of("lastTimezone", lastTimezone, "currentTimezone", currentTimezone)
+        );
+
+        engine.process("test", context, httpServletResponse.getWriter());
+        httpServletResponse.getWriter().close();
+    }
+
+    private String getLastTimezoneFromCookies(String lastTimezone, Cookie[] cookies) {
+        String cookie = getCookie(cookies);
+        if (!cookie.isEmpty()) {
+            lastTimezone = parseDateToFormat(cookie);
         }
         return lastTimezone;
     }
 
-    private Cookie findCookieByName(Cookie[] cookies, String name) {
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                if (name.equals(cookie.getName())) {
-                    return cookie;
-                }
-            }
-        }
-        return null;
+    private String getCookie(Cookie[] cookies) {
+        return Arrays.stream(cookies)
+                .findFirst()
+                .map(Cookie::getValue)
+                .orElse("");
     }
 
-    private void renderTimezonePage(HttpServletRequest request, HttpServletResponse response, String currentTimezone) throws IOException {
-        Context context = new Context(request.getLocale());
-        context.setVariable("currentTimezone", currentTimezone);
-
-        response.setContentType("text/html; charset=UTF-8");
-        String templateName = "test";
-
-        try {
-            engine.process(templateName, context, response.getWriter());
-        } catch (Exception e) {
-            e.printStackTrace();
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal Server Error");
-        }
-    }
-
-    private String parseDateToFormat(String zoneId) {
+    public String parseDateToFormat(String zoneId) {
         Instant date = new Date().toInstant();
         DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern(DATE_PATTERN)
                 .withZone(ZoneId.of(zoneId));
         return dateFormat.format(date);
     }
-
 }
