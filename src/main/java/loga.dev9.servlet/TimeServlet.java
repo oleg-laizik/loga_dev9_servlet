@@ -71,6 +71,9 @@ public class TimeServlet extends HttpServlet {
     }
 
     private String getParamFromCookies(Cookie[] cookies) {
+        if (cookies == null) {
+            return null;
+        }
         return Arrays.stream(cookies)
                 .filter(e -> e.getName().equals(LAST_TIMEZONE_PARAM))
                 .findFirst()
